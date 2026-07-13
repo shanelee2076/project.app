@@ -1,16 +1,7 @@
-"""
-Sales Data Analytics Dashboard
---------------------------------
-A Streamlit dashboard to analyze sales trends, profits, top-selling products,
-and regional performance.
-
-Run locally:
-    streamlit run app.py
-"""
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from pathlib import Path
 
 # ---------------------------------------------------------------
 # Page config
@@ -18,182 +9,244 @@ import streamlit as st
 st.set_page_config(
     page_title="Sales Analytics Dashboard",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="wide"
 )
 
 # ---------------------------------------------------------------
-# Data loading
+# Load Data
 # ---------------------------------------------------------------
 @st.cache_data
-def load_data(path: str = "data/sales_data.csv") -> pd.DataFrame:
-    df = pd.read_csv(path, parse_dates=["Order_Date"])
+def load_data():
+
+    csv_path = Path(__file__).parent / "data" / "sales_data.csv"
+
+    if not csv_path.exists():
+        st.error(f"CSV file not found:\n{csv_path}")
+        st.stop()
+
+    df = pd.read_csv(csv_path)
+
+    df["Order_Date"] = pd.to_datetime(df["Order_Date"])
+
     df["Year"] = df["Order_Date"].dt.year
     df["Month"] = df["Order_Date"].dt.to_period("M").astype(str)
     df["Month_Name"] = df["Order_Date"].dt.strftime("%b %Y")
-    df["Profit_Margin"] = (df["Profit"] / df["Sales"] * 100).round(2)
+
+    df["Profit_Margin"] = (
+        df["Profit"] / df["Sales"] * 100
+    ).round(2)
+
     return df
 
 
 df = load_data()
 
 # ---------------------------------------------------------------
-# Sidebar filters
+# Sidebar
 # ---------------------------------------------------------------
-st.sidebar.title("🔎 Filters")
-
-min_date, max_date = df["Order_Date"].min(), df["Order_Date"].max()
-date_range = st.sidebar.date_input(
-    "Order date range",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date,
-)
+st.sidebar.title("🔍 Filters")
 
 regions = st.sidebar.multiselect(
-    "Region", options=sorted(df["Region"].unique()), default=sorted(df["Region"].unique())
+    "Region",
+    sorted(df["Region"].unique()),
+    default=sorted(df["Region"].unique())
 )
+
 categories = st.sidebar.multiselect(
-    "Category", options=sorted(df["Category"].unique()), default=sorted(df["Category"].unique())
+    "Category",
+    sorted(df["Category"].unique()),
+    default=sorted(df["Category"].unique())
 )
+
 segments = st.sidebar.multiselect(
-    "Customer segment",
-    options=sorted(df["Customer_Segment"].unique()),
-    default=sorted(df["Customer_Segment"].unique()),
+    "Customer Segment",
+    sorted(df["Customer_Segment"].unique()),
+    default=sorted(df["Customer_Segment"].unique())
+)
+
+min_date = df["Order_Date"].min()
+max_date = df["Order_Date"].max()
+
+date_range = st.sidebar.date_input(
+    "Date Range",
+    value=(min_date, max_date)
 )
 
 if len(date_range) == 2:
-    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
 else:
-    start_date, end_date = min_date, max_date
+    start_date = min_date
+    end_date = max_date
 
-mask = (
-    (df["Order_Date"] >= start_date)
-    & (df["Order_Date"] <= end_date)
-    & (df["Region"].isin(regions))
-    & (df["Category"].isin(categories))
-    & (df["Customer_Segment"].isin(segments))
-)
-fdf = df.loc[mask].copy()
+filtered = df[
+    (df["Order_Date"] >= start_date) &
+    (df["Order_Date"] <= end_date) &
+    (df["Region"].isin(regions)) &
+    (df["Category"].isin(categories)) &
+    (df["Customer_Segment"].isin(segments))
+]
 
-st.sidebar.markdown("---")
-st.sidebar.caption(f"Showing **{len(fdf):,}** of {len(df):,} orders")
-
-# ---------------------------------------------------------------
-# Header
-# ---------------------------------------------------------------
-st.title("📊 Sales Data Analytics Dashboard")
-st.caption("Sales trends, profitability, top products, and regional performance at a glance.")
-
-if fdf.empty:
-    st.warning("No data matches the selected filters. Please broaden your filter selection.")
+if filtered.empty:
+    st.warning("No data found.")
     st.stop()
 
 # ---------------------------------------------------------------
-# KPI row
+# Title
 # ---------------------------------------------------------------
-total_sales = fdf["Sales"].sum()
-total_profit = fdf["Profit"].sum()
-total_orders = fdf["Order_ID"].nunique()
-avg_order_value = total_sales / total_orders if total_orders else 0
-profit_margin = (total_profit / total_sales * 100) if total_sales else 0
-
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Total Sales", f"${total_sales:,.0f}")
-k2.metric("Total Profit", f"${total_profit:,.0f}")
-k3.metric("Total Orders", f"{total_orders:,}")
-k4.metric("Avg Order Value", f"${avg_order_value:,.2f}")
-k5.metric("Profit Margin", f"{profit_margin:.1f}%")
-
-st.markdown("---")
+st.title("📊 Sales Analytics Dashboard")
 
 # ---------------------------------------------------------------
-# Row 1: Sales trend + Category split
+# KPIs
 # ---------------------------------------------------------------
-c1, c2 = st.columns((2, 1))
+sales = filtered["Sales"].sum()
+profit = filtered["Profit"].sum()
+orders = filtered["Order_ID"].nunique()
 
-with c1:
-    st.subheader("📈 Monthly Sales & Profit Trend")
-    trend = (
-        fdf.groupby("Month", as_index=False)[["Sales", "Profit"]]
-        .sum()
-        .sort_values("Month")
+avg = sales / orders if orders else 0
+margin = (profit / sales * 100) if sales else 0
+
+c1, c2, c3, c4, c5 = st.columns(5)
+
+c1.metric("Sales", f"${sales:,.0f}")
+c2.metric("Profit", f"${profit:,.0f}")
+c3.metric("Orders", orders)
+c4.metric("Average Order", f"${avg:,.2f}")
+c5.metric("Margin", f"{margin:.2f}%")
+
+st.divider()
+
+# ---------------------------------------------------------------
+# Monthly Trend
+# ---------------------------------------------------------------
+left, right = st.columns([2, 1])
+
+with left:
+
+    trend = filtered.groupby("Month")[["Sales", "Profit"]].sum().reset_index()
+
+    fig = px.line(
+        trend,
+        x="Month",
+        y=["Sales", "Profit"],
+        markers=True
     )
-    fig_trend = px.line(
-        trend, x="Month", y=["Sales", "Profit"], markers=True,
-        labels={"value": "Amount ($)", "Month": "Month", "variable": "Metric"},
+
+    st.plotly_chart(fig, use_container_width=True)
+
+with right:
+
+    cat = filtered.groupby("Category")["Sales"].sum().reset_index()
+
+    fig = px.pie(
+        cat,
+        names="Category",
+        values="Sales",
+        hole=.4
     )
-    fig_trend.update_layout(legend_title_text="", hovermode="x unified")
-    st.plotly_chart(fig_trend, use_container_width=True)
 
-with c2:
-    st.subheader("🧩 Sales by Category")
-    cat = fdf.groupby("Category", as_index=False)["Sales"].sum().sort_values("Sales", ascending=False)
-    fig_cat = px.pie(cat, names="Category", values="Sales", hole=0.45)
-    fig_cat.update_traces(textinfo="percent+label")
-    st.plotly_chart(fig_cat, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------
-# Row 2: Top products + Regional performance
+# Top Products
 # ---------------------------------------------------------------
-c3, c4 = st.columns(2)
+left, right = st.columns(2)
 
-with c3:
-    st.subheader("🏆 Top 10 Products by Sales")
-    top_products = (
-        fdf.groupby("Product", as_index=False)[["Sales", "Profit"]]
+with left:
+
+    top = (
+        filtered.groupby("Product")[["Sales", "Profit"]]
         .sum()
         .sort_values("Sales", ascending=False)
         .head(10)
+        .reset_index()
     )
-    fig_top = px.bar(
-        top_products.sort_values("Sales"),
-        x="Sales", y="Product", orientation="h",
-        color="Profit", color_continuous_scale="Blues",
-        labels={"Sales": "Sales ($)"},
+
+    fig = px.bar(
+        top.sort_values("Sales"),
+        x="Sales",
+        y="Product",
+        orientation="h",
+        color="Profit"
     )
-    st.plotly_chart(fig_top, use_container_width=True)
 
-with c4:
-    st.subheader("🗺️ Regional Performance")
-    region_perf = fdf.groupby("Region", as_index=False)[["Sales", "Profit"]].sum().sort_values("Sales", ascending=False)
-    fig_region = px.bar(
-        region_perf, x="Region", y=["Sales", "Profit"], barmode="group",
-        labels={"value": "Amount ($)", "variable": "Metric"},
+    st.plotly_chart(fig, use_container_width=True)
+
+with right:
+
+    region = (
+        filtered.groupby("Region")[["Sales", "Profit"]]
+        .sum()
+        .reset_index()
     )
-    fig_region.update_layout(legend_title_text="")
-    st.plotly_chart(fig_region, use_container_width=True)
+
+    fig = px.bar(
+        region,
+        x="Region",
+        y=["Sales", "Profit"],
+        barmode="group"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------
-# Row 3: Profit margin by category + Customer segment
+# Profit Margin
 # ---------------------------------------------------------------
-c5, c6 = st.columns(2)
+left, right = st.columns(2)
 
-with c5:
-    st.subheader("💰 Profit Margin by Category")
-    margin = fdf.groupby("Category", as_index=False).apply(
-        lambda g: pd.Series({"Profit_Margin": g["Profit"].sum() / g["Sales"].sum() * 100})
-    ).sort_values("Profit_Margin", ascending=False)
-    fig_margin = px.bar(margin, x="Category", y="Profit_Margin", color="Profit_Margin",
-                         color_continuous_scale="Greens", labels={"Profit_Margin": "Margin (%)"})
-    st.plotly_chart(fig_margin, use_container_width=True)
+with left:
 
-with c6:
-    st.subheader("👥 Sales by Customer Segment")
-    seg = fdf.groupby("Customer_Segment", as_index=False)["Sales"].sum().sort_values("Sales", ascending=False)
-    fig_seg = px.bar(seg, x="Customer_Segment", y="Sales", color="Customer_Segment",
-                      labels={"Sales": "Sales ($)"})
-    fig_seg.update_layout(showlegend=False)
-    st.plotly_chart(fig_seg, use_container_width=True)
+    margin_df = (
+        filtered.groupby("Category")
+        .agg({"Sales":"sum","Profit":"sum"})
+        .reset_index()
+    )
+
+    margin_df["Profit_Margin"] = (
+        margin_df["Profit"] /
+        margin_df["Sales"] * 100
+    )
+
+    fig = px.bar(
+        margin_df,
+        x="Category",
+        y="Profit_Margin",
+        color="Profit_Margin"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+with right:
+
+    seg = (
+        filtered.groupby("Customer_Segment")["Sales"]
+        .sum()
+        .reset_index()
+    )
+
+    fig = px.bar(
+        seg,
+        x="Customer_Segment",
+        y="Sales",
+        color="Customer_Segment"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------
-# Raw data explorer
+# Data Table
 # ---------------------------------------------------------------
-st.markdown("---")
-with st.expander("🔍 View filtered raw data"):
-    st.dataframe(fdf.sort_values("Order_Date", ascending=False), use_container_width=True)
-    csv = fdf.to_csv(index=False).encode("utf-8")
-    st.download_button("Download filtered data as CSV", data=csv, file_name="filtered_sales_data.csv", mime="text/csv")
+st.divider()
 
-st.markdown("---")
-st.caption("Built with Streamlit · Sample data is synthetically generated for demonstration purposes.")
+with st.expander("View Raw Data"):
+
+    st.dataframe(filtered, use_container_width=True)
+
+    st.download_button(
+        "Download CSV",
+        filtered.to_csv(index=False),
+        "filtered_sales_data.csv",
+        "text/csv"
+    )
+
+st.caption("Built with Streamlit")
